@@ -153,10 +153,18 @@ export default function Home() {
 
           <button
             onClick={() => signOut()}
-            className="ml-auto px-4 py-2 bg-yellow-400 text-black rounded font-semibold"
+            className="px-4 py-2 bg-yellow-400 text-black rounded font-semibold"
           >
             Logout
           </button>
+<button>
+<a
+  href="/api/google/auth"
+  className="ml-auto px-4 py-2 bg-yellow-400 text-black rounded font-semibold"
+>
+  Connect Google Drive
+</a>
+</button>
         </header>
 
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
