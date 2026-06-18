@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 
 type PubMedArticle = {
@@ -46,6 +46,16 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(false);
+
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  const connected = params.get("google");
+
+  if (connected === "connected") {
+    setGoogleConnected(true);
+  }
+}, []);
 
   const [pubmedQuery, setPubmedQuery] = useState("microneedle drug delivery");
   const [pubmedLoading, setPubmedLoading] = useState(false);
@@ -151,20 +161,28 @@ export default function Home() {
             </p>
           </div>
 
-          <button
-            onClick={() => signOut()}
-            className="px-4 py-2 bg-yellow-400 text-black rounded font-semibold"
-          >
-            Logout
-          </button>
-<button>
-<a
-  href="/api/google/auth"
-  className="ml-auto px-4 py-2 bg-yellow-400 text-black rounded font-semibold"
->
-  Connect Google Drive
-</a>
-</button>
+<div className="ml-auto flex gap-3">
+  <button
+    onClick={() => signOut()}
+    className="px-4 py-2 bg-yellow-400 text-black rounded font-semibold"
+  >
+    Logout
+  </button>
+
+  {googleConnected ? (
+    <div className="px-4 py-2 bg-green-600 text-white rounded font-semibold">
+      Google Drive Connected
+    </div>
+  ) : (
+    <a
+      href="/api/google/auth"
+      className="px-4 py-2 bg-yellow-400 text-black rounded font-semibold"
+    >
+      Connect Google Drive
+    </a>
+  )}
+</div>
+
         </header>
 
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
