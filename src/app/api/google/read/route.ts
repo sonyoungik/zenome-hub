@@ -1,6 +1,36 @@
 import { google } from "googleapis";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import pdfParse from "pdf-parse";
+import mammoth from "mammoth";
+import JSZip from "jszip";
+
+function stripXmlTags(xml: string) {
+  return xml
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function extractPptxText(buffer: Buffer) {
+  const zip = await JSZip.loadAsync(buffer);
+  const slideFiles = Object.keys(zip.files)
+    .filter((name) => name.startsWith("ppt/slides/slide") && name.endsWith(".xml"))
+    .sort();
+
+  const slides: string[] = [];
+
+  for (const fileName of slideFiles) {
+    const xml = await zip.files[fileName].async("string");
+    const text = stripXmlTags(xml);
+    if (text) slides.push(text);
+  }
+
+  return slides.join("\n\n--- Slide Break ---\n\n");
+}
 
 export async function POST(req: Request) {
   try {
@@ -34,10 +64,14 @@ export async function POST(req: Request) {
 
     if (mimeType === "application/vnd.google-apps.document") {
       const res = await drive.files.export(
-        {
-          fileId,
-          mimeType: "text/plain",
-        },
+        { fileId, mimeType: "text/plain" },
+        { responseType: "text" }
+      );
+
+      text = res.data as string;
+    } else if (mimeType === "application/vnd.google-apps.presentation") {
+      const res = await drive.files.export(
+        { fileId, mimeType: "text/plain" },
         { responseType: "text" }
       );
 
@@ -47,29 +81,46 @@ export async function POST(req: Request) {
       mimeType === "text/markdown"
     ) {
       const res = await drive.files.get(
-        {
-          fileId,
-          alt: "media",
-        },
+        { fileId, alt: "media" },
         { responseType: "text" }
       );
 
       text = res.data as string;
     } else {
-      return NextResponse.json(
-        {
-          error:
-            "현재 버전에서는 Google Docs, TXT, Markdown 파일만 본문 분석을 지원합니다.",
-        },
-        { status: 400 }
+      const res = await drive.files.get(
+        { fileId, alt: "media" },
+        { responseType: "arraybuffer" }
       );
+
+      const buffer = Buffer.from(res.data as ArrayBuffer);
+
+      if (mimeType === "application/pdf") {
+        const parsed = await pdfParse(buffer);
+        text = parsed.text;
+      } else if (
+        mimeType ===
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      ) {
+        const parsed = await mammoth.extractRawText({ buffer });
+        text = parsed.value;
+      } else if (
+        mimeType ===
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      ) {
+        text = await extractPptxText(buffer);
+      } else {
+        return NextResponse.json(
+          { error: `지원하지 않는 파일 형식입니다: ${mimeType}` },
+          { status: 400 }
+        );
+      }
     }
 
     return NextResponse.json({
       fileId,
       name,
       mimeType,
-      text,
+      text: text.slice(0, 60000),
     });
   } catch (error: any) {
     console.error("GOOGLE READ ERROR:", error);

@@ -161,10 +161,16 @@ ${data.text}`;
           <div className="space-y-4 mt-5">
             {driveItems.map((item) => {
               const isFolder = item.mimeType === FOLDER_MIME;
-              const canAnalyze =
-                item.mimeType === "application/vnd.google-apps.document" ||
-                item.mimeType === "text/plain" ||
-                item.mimeType === "text/markdown";
+const canAnalyze =
+  item.mimeType === "application/vnd.google-apps.document" ||
+  item.mimeType === "application/vnd.google-apps.presentation" ||
+  item.mimeType === "text/plain" ||
+  item.mimeType === "text/markdown" ||
+  item.mimeType === "application/pdf" ||
+  item.mimeType ===
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+  item.mimeType ===
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
               return (
                 <div
