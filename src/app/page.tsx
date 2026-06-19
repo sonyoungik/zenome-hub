@@ -49,6 +49,8 @@ export default function Home() {
   const [googleConnected, setGoogleConnected] = useState(false);
 
 	const [driveFiles, setDriveFiles] = useState<any[]>([]);
+	const [driveFolders, setDriveFolders] = useState<any[]>([]);
+	const [folderLoading, setFolderLoading] = useState(false);
 	const [driveLoading, setDriveLoading] = useState(false);
 
 useEffect(() => {
@@ -137,7 +139,6 @@ useEffect(() => {
 
 async function loadDriveFiles() {
   setDriveLoading(true);
-
   try {
     const res = await fetch("/api/google/files");
     const data = await res.json();
@@ -155,6 +156,29 @@ async function loadDriveFiles() {
     setDriveLoading(false);
   }
 }
+
+
+async function loadDriveFolders() {
+  setFolderLoading(true);
+
+  try {
+    const res = await fetch("/api/google/folders");
+    const data = await res.json();
+
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
+
+    setDriveFolders(data.folders || []);
+  } catch (error) {
+    console.error(error);
+    alert("Drive folder loading failed.");
+  } finally {
+    setFolderLoading(false);
+  }
+}
+
 
 
   function sendPubMedResultsToAI() {
@@ -203,6 +227,15 @@ async function loadDriveFiles() {
 >
   {driveLoading ? "Loading..." : "Google Drive Connected"}
 </button>
+
+
+<button
+  onClick={loadDriveFolders}
+  className="px-4 py-2 bg-green-700 text-white rounded font-semibold"
+>
+  {folderLoading ? "Loading Folders..." : "Load Drive Folders"}
+</button>
+
 
 
   ) : (
@@ -295,6 +328,41 @@ async function loadDriveFiles() {
           )}
         </section>
 
+
+{driveFolders.length > 0 && (
+  <section className="mt-8 border border-green-500 rounded-xl p-5">
+    <h2 className="text-2xl font-semibold text-green-400">
+      Google Drive Folders
+    </h2>
+
+    <div className="space-y-4 mt-4">
+      {driveFolders.map((folder) => (
+        <div
+          key={folder.id}
+          className="border border-green-500 rounded-lg p-4 bg-neutral-950"
+        >
+          <h3 className="text-lg font-semibold text-green-300">
+            📁 {folder.name}
+          </h3>
+
+          <p className="mt-1 text-sm text-green-100">
+            Modified: {folder.modifiedTime}
+          </p>
+
+          {folder.webViewLink && (
+            <a
+              href={folder.webViewLink}
+              target="_blank"
+              className="inline-block mt-2 underline text-green-300"
+            >
+              Open Folder
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  </section>
+)}
 
 
 {driveFiles.length > 0 && (
