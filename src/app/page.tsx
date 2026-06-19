@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
+import DriveExplorer from "@/components/DriveExplorer";
 
 type PubMedArticle = {
   pmid: string;
@@ -11,21 +12,6 @@ type PubMedArticle = {
   authors: string;
   url: string;
 };
-
-type DriveItem = {
-  id: string;
-  name: string;
-  mimeType?: string;
-  webViewLink?: string;
-  modifiedTime?: string;
-};
-
-type DrivePathItem = {
-  id: string;
-  name: string;
-};
-
-const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 const templates = [
   {
@@ -63,12 +49,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
 
   const [googleConnected, setGoogleConnected] = useState(false);
-
-  const [driveItems, setDriveItems] = useState<DriveItem[]>([]);
-  const [driveLoading, setDriveLoading] = useState(false);
-  const [drivePath, setDrivePath] = useState<DrivePathItem[]>([
-    { id: "root", name: "Root" },
-  ]);
 
   const [pubmedQuery, setPubmedQuery] = useState("microneedle drug delivery");
   const [pubmedLoading, setPubmedLoading] = useState(false);
@@ -154,51 +134,6 @@ export default function Home() {
     }
   }
 
-  async function loadDriveChildren(parentId = "root", folderName = "Root") {
-    setDriveLoading(true);
-
-    try {
-      const res = await fetch(
-        `/api/google/children?parentId=${encodeURIComponent(parentId)}`
-      );
-      const data = await res.json();
-
-      if (data.error) {
-        alert(data.error);
-        return;
-      }
-
-      setDriveItems(data.items || []);
-
-      if (parentId === "root") {
-        setDrivePath([{ id: "root", name: "Root" }]);
-      } else {
-        setDrivePath((prev) => {
-          const existsIndex = prev.findIndex((item) => item.id === parentId);
-
-          if (existsIndex >= 0) {
-            return prev.slice(0, existsIndex + 1);
-          }
-
-          return [...prev, { id: parentId, name: folderName }];
-        });
-      }
-    } catch (error) {
-      console.error(error);
-      alert("Drive folder loading failed.");
-    } finally {
-      setDriveLoading(false);
-    }
-  }
-
-  async function openDrivePath(index: number) {
-    const target = drivePath[index];
-    if (!target) return;
-
-    setDrivePath((prev) => prev.slice(0, index + 1));
-    await loadDriveChildren(target.id, target.name);
-  }
-
   function sendPubMedResultsToAI() {
     if (pubmedResults.length === 0) return;
 
@@ -238,12 +173,12 @@ export default function Home() {
             </button>
 
             {googleConnected ? (
-              <button
-                onClick={() => loadDriveChildren("root", "Root")}
+              <a
+                href="/api/google/auth"
                 className="px-4 py-2 bg-green-600 text-white rounded font-semibold"
               >
-                {driveLoading ? "Loading Drive..." : "Open Drive Root"}
-              </button>
+                Reconnect Google Drive
+              </a>
             ) : (
               <a
                 href="/api/google/auth"
@@ -310,15 +245,19 @@ export default function Home() {
                     <p className="text-sm text-yellow-200">
                       {index + 1}. PMID: {item.pmid} | {item.year}
                     </p>
+
                     <h3 className="text-lg font-semibold mt-1">
                       {item.title}
                     </h3>
+
                     <p className="mt-2 text-yellow-100">
                       Authors: {item.authors}
                     </p>
+
                     <p className="mt-1 text-yellow-100">
                       Journal: {item.journal}
                     </p>
+
                     <a
                       className="inline-block mt-2 underline text-yellow-300"
                       href={item.url}
@@ -333,74 +272,7 @@ export default function Home() {
           )}
         </section>
 
-        {driveItems.length > 0 && (
-          <section className="mt-8 border border-green-500 rounded-xl p-5">
-            <h2 className="text-2xl font-semibold text-green-400">
-              Google Drive Explorer
-            </h2>
-
-            <div className="mt-3 text-sm text-green-200">
-              {drivePath.map((item, index) => (
-                <span key={item.id}>
-                  <button
-                    onClick={() => openDrivePath(index)}
-                    className="underline text-green-300"
-                  >
-                    {item.name}
-                  </button>
-                  {index < drivePath.length - 1 && <span> / </span>}
-                </span>
-              ))}
-            </div>
-
-            <div className="space-y-4 mt-5">
-              {driveItems.map((item) => {
-                const isFolder = item.mimeType === FOLDER_MIME;
-
-                return (
-                  <div
-                    key={item.id}
-                    className="border border-green-500 rounded-lg p-4 bg-neutral-950"
-                  >
-                    <h3 className="text-lg font-semibold text-green-300">
-                      {isFolder ? "📁 " : "📄 "}
-                      {item.name}
-                    </h3>
-
-                    <p className="mt-1 text-sm text-green-100">
-                      Type: {item.mimeType}
-                    </p>
-
-                    <p className="mt-1 text-sm text-green-100">
-                      Modified: {item.modifiedTime}
-                    </p>
-
-                    <div className="flex gap-3 mt-3">
-                      {isFolder && (
-                        <button
-                          onClick={() => loadDriveChildren(item.id, item.name)}
-                          className="px-4 py-2 bg-green-700 text-white rounded font-semibold"
-                        >
-                          Open Folder
-                        </button>
-                      )}
-
-                      {item.webViewLink && (
-                        <a
-                          href={item.webViewLink}
-                          target="_blank"
-                          className="px-4 py-2 bg-green-600 text-white rounded font-semibold"
-                        >
-                          Open in Google Drive
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
+        {googleConnected && <DriveExplorer />}
 
         <section className="mt-8 border border-yellow-500 rounded-xl p-5">
           <h2 className="text-2xl font-semibold">Prompt Templates</h2>
