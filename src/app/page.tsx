@@ -48,6 +48,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(false);
 
+	const [driveFiles, setDriveFiles] = useState<any[]>([]);
+	const [driveLoading, setDriveLoading] = useState(false);
+
 useEffect(() => {
   const params = new URLSearchParams(window.location.search);
   const connected = params.get("google");
@@ -132,6 +135,28 @@ useEffect(() => {
     }
   }
 
+async function loadDriveFiles() {
+  setDriveLoading(true);
+
+  try {
+    const res = await fetch("/api/google/files");
+    const data = await res.json();
+
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
+
+    setDriveFiles(data.files || []);
+  } catch (error) {
+    console.error(error);
+    alert("Drive file loading failed.");
+  } finally {
+    setDriveLoading(false);
+  }
+}
+
+
   function sendPubMedResultsToAI() {
     if (pubmedResults.length === 0) return;
 
@@ -170,9 +195,16 @@ useEffect(() => {
   </button>
 
   {googleConnected ? (
-    <div className="px-4 py-2 bg-green-600 text-white rounded font-semibold">
-      Google Drive Connected
-    </div>
+
+
+<button
+  onClick={loadDriveFiles}
+  className="px-4 py-2 bg-green-600 text-white rounded font-semibold"
+>
+  {driveLoading ? "Loading..." : "Google Drive Connected"}
+</button>
+
+
   ) : (
     <a
       href="/api/google/auth"
