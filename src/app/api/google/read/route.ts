@@ -69,8 +69,8 @@ export async function POST(req: Request) {
         { fileId, mimeType: "text/plain" },
         { responseType: "text" }
       );
-
       text = res.data as string;
+
     } else if (mimeType === "application/vnd.google-apps.presentation") {
       const res = await drive.files.export(
         {
@@ -83,16 +83,26 @@ export async function POST(req: Request) {
 
       const buffer = Buffer.from(res.data as ArrayBuffer);
       text = await extractPptxText(buffer);
+
     } else if (mimeType === "text/plain" || mimeType === "text/markdown") {
       const res = await drive.files.get(
-        { fileId, alt: "media" },
+        {
+          fileId,
+          alt: "media",
+          supportsAllDrives: true,
+        },
         { responseType: "text" }
       );
 
       text = res.data as string;
+
     } else {
       const res = await drive.files.get(
-        { fileId, alt: "media" },
+        {
+          fileId,
+          alt: "media",
+          supportsAllDrives: true,
+        },
         { responseType: "arraybuffer" }
       );
 
@@ -102,10 +112,11 @@ export async function POST(req: Request) {
         return NextResponse.json(
           {
             error:
-              "PDF parsing is temporarily disabled because pdf-parse requires browser DOM APIs in the current Vercel runtime. Please test DOCX, PPTX, Google Docs, or Google Slides first.",
+              "PDF parsing is temporarily disabled. Please use DOCX, PPTX, Google Docs, or Google Slides first.",
           },
           { status: 400 }
         );
+
       } else if (
         mimeType ===
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -113,11 +124,13 @@ export async function POST(req: Request) {
         const mammoth = await import("mammoth");
         const parsed = await mammoth.extractRawText({ buffer });
         text = parsed.value;
+
       } else if (
         mimeType ===
         "application/vnd.openxmlformats-officedocument.presentationml.presentation"
       ) {
         text = await extractPptxText(buffer);
+
       } else {
         return NextResponse.json(
           { error: `Unsupported file type: ${mimeType}` },
@@ -132,15 +145,20 @@ export async function POST(req: Request) {
       mimeType,
       text: text.slice(0, 60000),
     });
+
   } catch (error: any) {
     console.error("GOOGLE READ ERROR:", error);
 
     return NextResponse.json(
       {
-        error: error?.message || "Failed to read Google Drive file.",
+        error:
+          error?.response?.data?.error?.message ||
+          error?.message ||
+          "Failed to read Google Drive file.",
+        status: error?.response?.status || 500,
         detail: String(error),
       },
-      { status: 500 }
+      { status: error?.response?.status || 500 }
     );
   }
 }
