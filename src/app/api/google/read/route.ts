@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import pdfParse from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
 import JSZip from "jszip";
 
@@ -95,8 +95,10 @@ export async function POST(req: Request) {
       const buffer = Buffer.from(res.data as ArrayBuffer);
 
       if (mimeType === "application/pdf") {
-        const parsed = await pdfParse(buffer);
-        text = parsed.text;
+const parser = new PDFParse({ data: buffer });
+const parsed = await parser.getText();
+text = parsed.text;
+await parser.destroy();
       } else if (
         mimeType ===
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
