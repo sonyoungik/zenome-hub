@@ -99,13 +99,13 @@ export async function POST(req: Request) {
       const buffer = Buffer.from(res.data as ArrayBuffer);
 
       if (mimeType === "application/pdf") {
-        const pdfModule = await import("pdf-parse");
-        const { PDFParse } = pdfModule;
-
-        const parser = new PDFParse({ data: buffer });
-        const parsed = await parser.getText();
-        text = parsed.text;
-        await parser.destroy();
+        return NextResponse.json(
+          {
+            error:
+              "PDF parsing is temporarily disabled because pdf-parse requires browser DOM APIs in the current Vercel runtime. Please test DOCX, PPTX, Google Docs, or Google Slides first.",
+          },
+          { status: 400 }
+        );
       } else if (
         mimeType ===
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
