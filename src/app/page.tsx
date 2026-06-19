@@ -12,11 +12,26 @@ type PubMedArticle = {
   url: string;
 };
 
+type DriveFile = {
+  id: string;
+  name: string;
+  mimeType?: string;
+  webViewLink?: string;
+  modifiedTime?: string;
+};
+
+type DriveFolder = {
+  id: string;
+  name: string;
+  webViewLink?: string;
+  modifiedTime?: string;
+};
+
 const templates = [
   {
     title: "논문 목록 정리",
     prompt:
-      "Microneedle drug delivery 관련 핵심 논문 10개를 저자, 논문 제목, 저널, 연도, 핵심 내용, 연구적 의의 순서로 표 형태로 정리해줘.",
+      "Microneedle drug delivery 관련 논문 10개를 표로 정리해줘. 논문 제목, 저자, 연도, 저널, 핵심 내용, 연구 의의 순서로 정리해줘.",
   },
   {
     title: "논문 초안 구조",
@@ -26,17 +41,17 @@ const templates = [
   {
     title: "강의자료 초안",
     prompt:
-      "박사과정 대학원생을 대상으로 microneedle drug delivery 강의를 준비하려고 한다. 90분 강의용 목차와 슬라이드 구성을 작성해줘.",
+      "박사과정 대학원생을 대상으로 microneedle drug delivery 강의를 준비하고 있다. 90분 강의용 목차와 슬라이드 구성을 작성해줘.",
   },
   {
     title: "자문 보고서",
     prompt:
-      "기업 자문용 보고서 형식으로 microneedle 기반 약물전달 기술의 시장성, 기술성, 규제 리스크, 개발 전략을 정리해줘.",
+      "기업 자문 보고서 형식으로 microneedle 기반 약물전달 기술의 시장성, 기술성, 규제 리스크, 개발 전략을 정리해줘.",
   },
   {
     title: "실험계획",
     prompt:
-      "Microneedle formulation 연구를 위한 실험계획을 작성해줘. 목적, 변수, 대조군, 평가방법, 예상 결과, 리스크를 포함해줘.",
+      "Microneedle formulation 연구를 위한 실험계획을 작성해줘. 목적, 변수, 조건, 평가방법, 예상 결과, 리스크를 포함해줘.",
   },
 ];
 
@@ -46,25 +61,27 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
+
   const [googleConnected, setGoogleConnected] = useState(false);
 
-	const [driveFiles, setDriveFiles] = useState<any[]>([]);
-	const [driveFolders, setDriveFolders] = useState<any[]>([]);
-	const [folderLoading, setFolderLoading] = useState(false);
-	const [driveLoading, setDriveLoading] = useState(false);
+  const [driveFiles, setDriveFiles] = useState<DriveFile[]>([]);
+  const [driveLoading, setDriveLoading] = useState(false);
 
-useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-  const connected = params.get("google");
-
-  if (connected === "connected") {
-    setGoogleConnected(true);
-  }
-}, []);
+  const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
+  const [folderLoading, setFolderLoading] = useState(false);
 
   const [pubmedQuery, setPubmedQuery] = useState("microneedle drug delivery");
   const [pubmedLoading, setPubmedLoading] = useState(false);
   const [pubmedResults, setPubmedResults] = useState<PubMedArticle[]>([]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("google");
+
+    if (connected === "connected") {
+      setGoogleConnected(true);
+    }
+  }, []);
 
   if (status === "loading") {
     return (
@@ -137,49 +154,47 @@ useEffect(() => {
     }
   }
 
-async function loadDriveFiles() {
-  setDriveLoading(true);
-  try {
-    const res = await fetch("/api/google/files");
-    const data = await res.json();
+  async function loadDriveFiles() {
+    setDriveLoading(true);
 
-    if (data.error) {
-      alert(data.error);
-      return;
+    try {
+      const res = await fetch("/api/google/files");
+      const data = await res.json();
+
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
+      setDriveFiles(data.files || []);
+    } catch (error) {
+      console.error(error);
+      alert("Drive file loading failed.");
+    } finally {
+      setDriveLoading(false);
     }
-
-    setDriveFiles(data.files || []);
-  } catch (error) {
-    console.error(error);
-    alert("Drive file loading failed.");
-  } finally {
-    setDriveLoading(false);
   }
-}
 
+  async function loadDriveFolders() {
+    setFolderLoading(true);
 
-async function loadDriveFolders() {
-  setFolderLoading(true);
+    try {
+      const res = await fetch("/api/google/folders");
+      const data = await res.json();
 
-  try {
-    const res = await fetch("/api/google/folders");
-    const data = await res.json();
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
 
-    if (data.error) {
-      alert(data.error);
-      return;
+      setDriveFolders(data.folders || []);
+    } catch (error) {
+      console.error(error);
+      alert("Drive folder loading failed.");
+    } finally {
+      setFolderLoading(false);
     }
-
-    setDriveFolders(data.folders || []);
-  } catch (error) {
-    console.error(error);
-    alert("Drive folder loading failed.");
-  } finally {
-    setFolderLoading(false);
   }
-}
-
-
 
   function sendPubMedResultsToAI() {
     if (pubmedResults.length === 0) return;
@@ -203,6 +218,7 @@ async function loadDriveFolders() {
       <div className="max-w-6xl mx-auto">
         <header className="flex items-center gap-4 border-b border-yellow-500 pb-6">
           <img src="/logo.png" className="w-20 h-20" alt="ADD Logo" />
+
           <div>
             <h1 className="text-4xl font-bold">zenome Lab AI Hub</h1>
             <p className="text-yellow-200">
@@ -210,44 +226,39 @@ async function loadDriveFolders() {
             </p>
           </div>
 
-<div className="ml-auto flex gap-3">
-  <button
-    onClick={() => signOut()}
-    className="px-4 py-2 bg-yellow-400 text-black rounded font-semibold"
-  >
-    Logout
-  </button>
+          <div className="ml-auto flex gap-3">
+            <button
+              onClick={() => signOut()}
+              className="px-4 py-2 bg-yellow-400 text-black rounded font-semibold"
+            >
+              Logout
+            </button>
 
-  {googleConnected ? (
+            {googleConnected ? (
+              <>
+                <button
+                  onClick={loadDriveFiles}
+                  className="px-4 py-2 bg-green-600 text-white rounded font-semibold"
+                >
+                  {driveLoading ? "Loading Files..." : "Load Drive Files"}
+                </button>
 
-
-<button
-  onClick={loadDriveFiles}
-  className="px-4 py-2 bg-green-600 text-white rounded font-semibold"
->
-  {driveLoading ? "Loading..." : "Google Drive Connected"}
-</button>
-
-
-<button
-  onClick={loadDriveFolders}
-  className="px-4 py-2 bg-green-700 text-white rounded font-semibold"
->
-  {folderLoading ? "Loading Folders..." : "Load Drive Folders"}
-</button>
-
-
-
-  ) : (
-    <a
-      href="/api/google/auth"
-      className="px-4 py-2 bg-yellow-400 text-black rounded font-semibold"
-    >
-      Connect Google Drive
-    </a>
-  )}
-</div>
-
+                <button
+                  onClick={loadDriveFolders}
+                  className="px-4 py-2 bg-green-700 text-white rounded font-semibold"
+                >
+                  {folderLoading ? "Loading Folders..." : "Load Drive Folders"}
+                </button>
+              </>
+            ) : (
+              <a
+                href="/api/google/auth"
+                className="px-4 py-2 bg-yellow-400 text-black rounded font-semibold"
+              >
+                Connect Google Drive
+              </a>
+            )}
+          </div>
         </header>
 
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
@@ -328,83 +339,79 @@ async function loadDriveFolders() {
           )}
         </section>
 
+        {driveFolders.length > 0 && (
+          <section className="mt-8 border border-green-500 rounded-xl p-5">
+            <h2 className="text-2xl font-semibold text-green-400">
+              Google Drive Folders
+            </h2>
 
-{driveFolders.length > 0 && (
-  <section className="mt-8 border border-green-500 rounded-xl p-5">
-    <h2 className="text-2xl font-semibold text-green-400">
-      Google Drive Folders
-    </h2>
+            <div className="space-y-4 mt-4">
+              {driveFolders.map((folder) => (
+                <div
+                  key={folder.id}
+                  className="border border-green-500 rounded-lg p-4 bg-neutral-950"
+                >
+                  <h3 className="text-lg font-semibold text-green-300">
+                    📁 {folder.name}
+                  </h3>
 
-    <div className="space-y-4 mt-4">
-      {driveFolders.map((folder) => (
-        <div
-          key={folder.id}
-          className="border border-green-500 rounded-lg p-4 bg-neutral-950"
-        >
-          <h3 className="text-lg font-semibold text-green-300">
-            📁 {folder.name}
-          </h3>
+                  <p className="mt-1 text-sm text-green-100">
+                    Modified: {folder.modifiedTime}
+                  </p>
 
-          <p className="mt-1 text-sm text-green-100">
-            Modified: {folder.modifiedTime}
-          </p>
+                  {folder.webViewLink && (
+                    <a
+                      href={folder.webViewLink}
+                      target="_blank"
+                      className="inline-block mt-2 underline text-green-300"
+                    >
+                      Open Folder
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
-          {folder.webViewLink && (
-            <a
-              href={folder.webViewLink}
-              target="_blank"
-              className="inline-block mt-2 underline text-green-300"
-            >
-              Open Folder
-            </a>
-          )}
-        </div>
-      ))}
-    </div>
-  </section>
-)}
+        {driveFiles.length > 0 && (
+          <section className="mt-8 border border-green-500 rounded-xl p-5">
+            <h2 className="text-2xl font-semibold text-green-400">
+              Google Drive Files
+            </h2>
 
+            <div className="space-y-4 mt-4">
+              {driveFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="border border-green-500 rounded-lg p-4 bg-neutral-950"
+                >
+                  <h3 className="text-lg font-semibold text-green-300">
+                    {file.name}
+                  </h3>
 
-{driveFiles.length > 0 && (
-  <section className="mt-8 border border-green-500 rounded-xl p-5">
-    <h2 className="text-2xl font-semibold text-green-400">
-      Google Drive Files
-    </h2>
+                  <p className="mt-1 text-sm text-green-100">
+                    Type: {file.mimeType}
+                  </p>
 
-    <div className="space-y-4 mt-4">
-      {driveFiles.map((file) => (
-        <div
-          key={file.id}
-          className="border border-green-500 rounded-lg p-4 bg-neutral-950"
-        >
-          <h3 className="text-lg font-semibold text-green-300">
-            {file.name}
-          </h3>
+                  <p className="mt-1 text-sm text-green-100">
+                    Modified: {file.modifiedTime}
+                  </p>
 
-          <p className="mt-1 text-sm text-green-100">
-            Type: {file.mimeType}
-          </p>
-
-          <p className="mt-1 text-sm text-green-100">
-            Modified: {file.modifiedTime}
-          </p>
-
-          {file.webViewLink && (
-            <a
-              href={file.webViewLink}
-              target="_blank"
-              className="inline-block mt-2 underline text-green-300"
-            >
-              Open in Google Drive
-            </a>
-          )}
-        </div>
-      ))}
-    </div>
-  </section>
-)}
-
-
+                  {file.webViewLink && (
+                    <a
+                      href={file.webViewLink}
+                      target="_blank"
+                      className="inline-block mt-2 underline text-green-300"
+                    >
+                      Open in Google Drive
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="mt-8 border border-yellow-500 rounded-xl p-5">
           <h2 className="text-2xl font-semibold">Prompt Templates</h2>
