@@ -272,7 +272,7 @@ export default function Home() {
           )}
         </section>
 
-        {googleConnected && <DriveExplorer />}
+{googleConnected && <DriveExplorer onSendToAI={setMessage} />}
 
         <section className="mt-8 border border-yellow-500 rounded-xl p-5">
           <h2 className="text-2xl font-semibold">Prompt Templates</h2>
