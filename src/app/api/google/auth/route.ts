@@ -8,15 +8,16 @@ export async function GET() {
     process.env.GOOGLE_REDIRECT_URI
   );
 
-  const url = oauth2Client.generateAuthUrl({
-    access_type: "offline",
-    prompt: "consent",
-    scope: [
-      "https://www.googleapis.com/auth/drive.file",
-      "https://www.googleapis.com/auth/drive.metadata.readonly",
-      "https://www.googleapis.com/auth/documents",
-    ],
-  });
+const url = oauth2Client.generateAuthUrl({
+  access_type: "offline",
+  prompt: "consent",
+  include_granted_scopes: true,
+  scope: [
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/documents.readonly",
+    "https://www.googleapis.com/auth/presentations.readonly",
+  ],
+});
 
   return NextResponse.redirect(url);
 }
