@@ -1,9 +1,8 @@
 import { google } from "googleapis";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { PDFParse } from "pdf-parse";
-import mammoth from "mammoth";
-import JSZip from "jszip";
+
+export const runtime = "nodejs";
 
 function stripXmlTags(xml: string) {
   return xml
@@ -16,6 +15,9 @@ function stripXmlTags(xml: string) {
 }
 
 async function extractPptxText(buffer: Buffer) {
+  const JSZipModule = await import("jszip");
+  const JSZip = JSZipModule.default;
+
   const zip = await JSZip.loadAsync(buffer);
   const slideFiles = Object.keys(zip.files)
     .filter((name) => name.startsWith("ppt/slides/slide") && name.endsWith(".xml"))
@@ -71,15 +73,17 @@ export async function POST(req: Request) {
       text = res.data as string;
     } else if (mimeType === "application/vnd.google-apps.presentation") {
       const res = await drive.files.export(
-        { fileId, mimeType: "text/plain" },
-        { responseType: "text" }
+        {
+          fileId,
+          mimeType:
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        },
+        { responseType: "arraybuffer" }
       );
 
-      text = res.data as string;
-    } else if (
-      mimeType === "text/plain" ||
-      mimeType === "text/markdown"
-    ) {
+      const buffer = Buffer.from(res.data as ArrayBuffer);
+      text = await extractPptxText(buffer);
+    } else if (mimeType === "text/plain" || mimeType === "text/markdown") {
       const res = await drive.files.get(
         { fileId, alt: "media" },
         { responseType: "text" }
@@ -95,14 +99,18 @@ export async function POST(req: Request) {
       const buffer = Buffer.from(res.data as ArrayBuffer);
 
       if (mimeType === "application/pdf") {
-const parser = new PDFParse({ data: buffer });
-const parsed = await parser.getText();
-text = parsed.text;
-await parser.destroy();
+        const pdfModule = await import("pdf-parse");
+        const { PDFParse } = pdfModule;
+
+        const parser = new PDFParse({ data: buffer });
+        const parsed = await parser.getText();
+        text = parsed.text;
+        await parser.destroy();
       } else if (
         mimeType ===
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       ) {
+        const mammoth = await import("mammoth");
         const parsed = await mammoth.extractRawText({ buffer });
         text = parsed.value;
       } else if (
@@ -112,7 +120,7 @@ await parser.destroy();
         text = await extractPptxText(buffer);
       } else {
         return NextResponse.json(
-          { error: `지원하지 않는 파일 형식입니다: ${mimeType}` },
+          { error: `Unsupported file type: ${mimeType}` },
           { status: 400 }
         );
       }
@@ -128,7 +136,10 @@ await parser.destroy();
     console.error("GOOGLE READ ERROR:", error);
 
     return NextResponse.json(
-      { error: error.message || "Failed to read Google Drive file." },
+      {
+        error: error?.message || "Failed to read Google Drive file.",
+        detail: String(error),
+      },
       { status: 500 }
     );
   }
