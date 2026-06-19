@@ -295,6 +295,49 @@ async function loadDriveFiles() {
           )}
         </section>
 
+
+
+{driveFiles.length > 0 && (
+  <section className="mt-8 border border-green-500 rounded-xl p-5">
+    <h2 className="text-2xl font-semibold text-green-400">
+      Google Drive Files
+    </h2>
+
+    <div className="space-y-4 mt-4">
+      {driveFiles.map((file) => (
+        <div
+          key={file.id}
+          className="border border-green-500 rounded-lg p-4 bg-neutral-950"
+        >
+          <h3 className="text-lg font-semibold text-green-300">
+            {file.name}
+          </h3>
+
+          <p className="mt-1 text-sm text-green-100">
+            Type: {file.mimeType}
+          </p>
+
+          <p className="mt-1 text-sm text-green-100">
+            Modified: {file.modifiedTime}
+          </p>
+
+          {file.webViewLink && (
+            <a
+              href={file.webViewLink}
+              target="_blank"
+              className="inline-block mt-2 underline text-green-300"
+            >
+              Open in Google Drive
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  </section>
+)}
+
+
+
         <section className="mt-8 border border-yellow-500 rounded-xl p-5">
           <h2 className="text-2xl font-semibold">Prompt Templates</h2>
 
