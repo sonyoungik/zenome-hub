@@ -12,7 +12,7 @@ type PubMedArticle = {
   url: string;
 };
 
-type DriveFile = {
+type DriveItem = {
   id: string;
   name: string;
   mimeType?: string;
@@ -20,12 +20,12 @@ type DriveFile = {
   modifiedTime?: string;
 };
 
-type DriveFolder = {
+type DrivePathItem = {
   id: string;
   name: string;
-  webViewLink?: string;
-  modifiedTime?: string;
 };
+
+const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 const templates = [
   {
@@ -64,11 +64,11 @@ export default function Home() {
 
   const [googleConnected, setGoogleConnected] = useState(false);
 
-  const [driveFiles, setDriveFiles] = useState<DriveFile[]>([]);
+  const [driveItems, setDriveItems] = useState<DriveItem[]>([]);
   const [driveLoading, setDriveLoading] = useState(false);
-
-  const [driveFolders, setDriveFolders] = useState<DriveFolder[]>([]);
-  const [folderLoading, setFolderLoading] = useState(false);
+  const [drivePath, setDrivePath] = useState<DrivePathItem[]>([
+    { id: "root", name: "Root" },
+  ]);
 
   const [pubmedQuery, setPubmedQuery] = useState("microneedle drug delivery");
   const [pubmedLoading, setPubmedLoading] = useState(false);
@@ -154,11 +154,13 @@ export default function Home() {
     }
   }
 
-  async function loadDriveFiles() {
+  async function loadDriveChildren(parentId = "root", folderName = "Root") {
     setDriveLoading(true);
 
     try {
-      const res = await fetch("/api/google/files");
+      const res = await fetch(
+        `/api/google/children?parentId=${encodeURIComponent(parentId)}`
+      );
       const data = await res.json();
 
       if (data.error) {
@@ -166,34 +168,35 @@ export default function Home() {
         return;
       }
 
-      setDriveFiles(data.files || []);
+      setDriveItems(data.items || []);
+
+      if (parentId === "root") {
+        setDrivePath([{ id: "root", name: "Root" }]);
+      } else {
+        setDrivePath((prev) => {
+          const existsIndex = prev.findIndex((item) => item.id === parentId);
+
+          if (existsIndex >= 0) {
+            return prev.slice(0, existsIndex + 1);
+          }
+
+          return [...prev, { id: parentId, name: folderName }];
+        });
+      }
     } catch (error) {
       console.error(error);
-      alert("Drive file loading failed.");
+      alert("Drive folder loading failed.");
     } finally {
       setDriveLoading(false);
     }
   }
 
-  async function loadDriveFolders() {
-    setFolderLoading(true);
+  async function openDrivePath(index: number) {
+    const target = drivePath[index];
+    if (!target) return;
 
-    try {
-      const res = await fetch("/api/google/folders");
-      const data = await res.json();
-
-      if (data.error) {
-        alert(data.error);
-        return;
-      }
-
-      setDriveFolders(data.folders || []);
-    } catch (error) {
-      console.error(error);
-      alert("Drive folder loading failed.");
-    } finally {
-      setFolderLoading(false);
-    }
+    setDrivePath((prev) => prev.slice(0, index + 1));
+    await loadDriveChildren(target.id, target.name);
   }
 
   function sendPubMedResultsToAI() {
@@ -235,21 +238,12 @@ export default function Home() {
             </button>
 
             {googleConnected ? (
-              <>
-                <button
-                  onClick={loadDriveFiles}
-                  className="px-4 py-2 bg-green-600 text-white rounded font-semibold"
-                >
-                  {driveLoading ? "Loading Files..." : "Load Drive Files"}
-                </button>
-
-                <button
-                  onClick={loadDriveFolders}
-                  className="px-4 py-2 bg-green-700 text-white rounded font-semibold"
-                >
-                  {folderLoading ? "Loading Folders..." : "Load Drive Folders"}
-                </button>
-              </>
+              <button
+                onClick={() => loadDriveChildren("root", "Root")}
+                className="px-4 py-2 bg-green-600 text-white rounded font-semibold"
+              >
+                {driveLoading ? "Loading Drive..." : "Open Drive Root"}
+              </button>
             ) : (
               <a
                 href="/api/google/auth"
@@ -339,76 +333,71 @@ export default function Home() {
           )}
         </section>
 
-        {driveFolders.length > 0 && (
+        {driveItems.length > 0 && (
           <section className="mt-8 border border-green-500 rounded-xl p-5">
             <h2 className="text-2xl font-semibold text-green-400">
-              Google Drive Folders
+              Google Drive Explorer
             </h2>
 
-            <div className="space-y-4 mt-4">
-              {driveFolders.map((folder) => (
-                <div
-                  key={folder.id}
-                  className="border border-green-500 rounded-lg p-4 bg-neutral-950"
-                >
-                  <h3 className="text-lg font-semibold text-green-300">
-                    📁 {folder.name}
-                  </h3>
-
-                  <p className="mt-1 text-sm text-green-100">
-                    Modified: {folder.modifiedTime}
-                  </p>
-
-                  {folder.webViewLink && (
-                    <a
-                      href={folder.webViewLink}
-                      target="_blank"
-                      className="inline-block mt-2 underline text-green-300"
-                    >
-                      Open Folder
-                    </a>
-                  )}
-                </div>
+            <div className="mt-3 text-sm text-green-200">
+              {drivePath.map((item, index) => (
+                <span key={item.id}>
+                  <button
+                    onClick={() => openDrivePath(index)}
+                    className="underline text-green-300"
+                  >
+                    {item.name}
+                  </button>
+                  {index < drivePath.length - 1 && <span> / </span>}
+                </span>
               ))}
             </div>
-          </section>
-        )}
 
-        {driveFiles.length > 0 && (
-          <section className="mt-8 border border-green-500 rounded-xl p-5">
-            <h2 className="text-2xl font-semibold text-green-400">
-              Google Drive Files
-            </h2>
+            <div className="space-y-4 mt-5">
+              {driveItems.map((item) => {
+                const isFolder = item.mimeType === FOLDER_MIME;
 
-            <div className="space-y-4 mt-4">
-              {driveFiles.map((file) => (
-                <div
-                  key={file.id}
-                  className="border border-green-500 rounded-lg p-4 bg-neutral-950"
-                >
-                  <h3 className="text-lg font-semibold text-green-300">
-                    {file.name}
-                  </h3>
+                return (
+                  <div
+                    key={item.id}
+                    className="border border-green-500 rounded-lg p-4 bg-neutral-950"
+                  >
+                    <h3 className="text-lg font-semibold text-green-300">
+                      {isFolder ? "📁 " : "📄 "}
+                      {item.name}
+                    </h3>
 
-                  <p className="mt-1 text-sm text-green-100">
-                    Type: {file.mimeType}
-                  </p>
+                    <p className="mt-1 text-sm text-green-100">
+                      Type: {item.mimeType}
+                    </p>
 
-                  <p className="mt-1 text-sm text-green-100">
-                    Modified: {file.modifiedTime}
-                  </p>
+                    <p className="mt-1 text-sm text-green-100">
+                      Modified: {item.modifiedTime}
+                    </p>
 
-                  {file.webViewLink && (
-                    <a
-                      href={file.webViewLink}
-                      target="_blank"
-                      className="inline-block mt-2 underline text-green-300"
-                    >
-                      Open in Google Drive
-                    </a>
-                  )}
-                </div>
-              ))}
+                    <div className="flex gap-3 mt-3">
+                      {isFolder && (
+                        <button
+                          onClick={() => loadDriveChildren(item.id, item.name)}
+                          className="px-4 py-2 bg-green-700 text-white rounded font-semibold"
+                        >
+                          Open Folder
+                        </button>
+                      )}
+
+                      {item.webViewLink && (
+                        <a
+                          href={item.webViewLink}
+                          target="_blank"
+                          className="px-4 py-2 bg-green-600 text-white rounded font-semibold"
+                        >
+                          Open in Google Drive
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
         )}
