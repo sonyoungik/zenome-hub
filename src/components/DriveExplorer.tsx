@@ -149,12 +149,30 @@ ${data.text}`;
         return;
       }
 
+      const folderList = (data.folders || [])
+        .map(
+          (folder: DriveItem, index: number) =>
+            `${index + 1}. [Folder] ${folder.name}\nModified: ${
+              folder.modifiedTime || "unknown"
+            }`
+        )
+        .join("\n\n");
+
       const fileList = (data.files || [])
         .map(
-          (file: any, index: number) =>
-            `${index + 1}. ${file.name}\nMIME Type: ${file.mimeType}\nModified: ${
-              file.modifiedTime || "unknown"
-            }`
+          (file: DriveItem, index: number) =>
+            `${index + 1}. [Supported File] ${file.name}\nMIME Type: ${
+              file.mimeType || "unknown"
+            }\nModified: ${file.modifiedTime || "unknown"}`
+        )
+        .join("\n\n");
+
+      const unsupportedList = (data.unsupportedFiles || [])
+        .map(
+          (file: DriveItem, index: number) =>
+            `${index + 1}. [Unsupported File] ${file.name}\nMIME Type: ${
+              file.mimeType || "unknown"
+            }\nModified: ${file.modifiedTime || "unknown"}`
         )
         .join("\n\n");
 
@@ -162,19 +180,30 @@ ${data.text}`;
 
 폴더명: ${item.name}
 폴더 ID: ${item.id}
-지원 파일 수: ${data.fileCount}
 
-파일 목록:
-${fileList}
+폴더 요약:
+- 전체 항목 수: ${data.totalItemCount}
+- 하위 폴더 수: ${data.folderCount}
+- 분석 지원 파일 수: ${data.supportedFileCount}
+- 현재 미지원 파일 수: ${data.unsupportedFileCount}
+
+하위 폴더 목록:
+${folderList || "없음"}
+
+분석 지원 파일 목록:
+${fileList || "없음"}
+
+현재 미지원 파일 목록:
+${unsupportedList || "없음"}
 
 분석 요청:
-1. 이 폴더의 연구 주제와 목적 추정
-2. 포함된 자료의 유형별 분류
-3. 핵심 기술 키워드 도출
-4. 논문화 가능성
-5. 특허/사업화 가능성
-6. 부족한 자료 또는 추가 수집이 필요한 자료
-7. 후속 연구 및 보고서 작성 방향
+1. 이 폴더의 연구 주제와 목적을 추정해줘.
+2. 포함된 자료를 연구논문, 특허, 발표자료, 보고서, 실험자료, 사업자료 관점에서 분류해줘.
+3. 핵심 기술 키워드를 도출해줘.
+4. 논문화 가능성이 높은 주제를 제안해줘.
+5. 특허 또는 사업화 가능성이 있는 주제를 제안해줘.
+6. 부족한 자료 또는 추가 수집이 필요한 자료를 제안해줘.
+7. 후속 연구 및 보고서 작성 방향을 제안해줘.
 
 주의:
 현재 단계에서는 파일명과 메타데이터 기반의 1차 분석이다.

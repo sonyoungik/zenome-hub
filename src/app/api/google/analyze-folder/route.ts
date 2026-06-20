@@ -4,17 +4,36 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+const SUPPORTED_MIME_TYPES = [
+  "application/vnd.google-apps.document",
+  "application/vnd.google-apps.presentation",
+  "text/plain",
+  "text/markdown",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+];
+
 export async function POST(req: Request) {
   try {
-    const { folderId } = await req.json();
+    const { folderId, folderName } = await req.json();
+
+    if (!folderId) {
+      return NextResponse.json(
+        { error: "folderId is required." },
+        { status: 400 }
+      );
+    }
 
     const cookieStore = await cookies();
+    const accessToken = cookieStore.get("google_access_token")?.value;
+    const refreshToken = cookieStore.get("google_refresh_token")?.value;
 
-    const accessToken =
-      cookieStore.get("google_access_token")?.value;
-
-    const refreshToken =
-      cookieStore.get("google_refresh_token")?.value;
+    if (!accessToken && !refreshToken) {
+      return NextResponse.json(
+        { error: "Google Drive is not connected." },
+        { status: 401 }
+      );
+    }
 
     const auth = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
@@ -27,50 +46,59 @@ export async function POST(req: Request) {
       refresh_token: refreshToken,
     });
 
-    const drive = google.drive({
-      version: "v3",
-      auth,
-    });
+    const drive = google.drive({ version: "v3", auth });
 
-    const files = await drive.files.list({
+    const result = await drive.files.list({
       q: `'${folderId}' in parents and trashed=false`,
-      fields:
-        "files(id,name,mimeType,modifiedTime)",
+      fields: "files(id, name, mimeType, modifiedTime, webViewLink)",
       pageSize: 100,
+      orderBy: "folder,name",
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
     });
 
-    const supportedFiles =
-      files.data.files?.filter((f) => {
-        const mime = f.mimeType || "";
+    const items = result.data.files || [];
 
-        return (
-          mime.includes("document") ||
-          mime.includes("presentation") ||
-          mime.includes("text") ||
-          mime.includes("wordprocessingml") ||
-          mime.includes("presentationml")
-        );
-      }) || [];
+    const folders = items.filter(
+      (item) => item.mimeType === "application/vnd.google-apps.folder"
+    );
+
+    const supportedFiles = items.filter((item) =>
+      SUPPORTED_MIME_TYPES.includes(item.mimeType || "")
+    );
+
+    const unsupportedFiles = items.filter((item) => {
+      const mimeType = item.mimeType || "";
+      return (
+        mimeType !== "application/vnd.google-apps.folder" &&
+        !SUPPORTED_MIME_TYPES.includes(mimeType)
+      );
+    });
 
     return NextResponse.json({
       folderId,
-      fileCount: supportedFiles.length,
+      folderName: folderName || "",
+      totalItemCount: items.length,
+      folderCount: folders.length,
+      supportedFileCount: supportedFiles.length,
+      unsupportedFileCount: unsupportedFiles.length,
+      folders,
       files: supportedFiles,
+      unsupportedFiles,
+      note: "This endpoint performs metadata-based folder analysis. Full content-based multi-file analysis will be added in the next step.",
     });
   } catch (error: any) {
-    console.error(error);
+    console.error("GOOGLE ANALYZE FOLDER ERROR:", error);
 
     return NextResponse.json(
       {
         error:
-          error.message ||
-          "Folder analysis failed",
+          error?.response?.data?.error?.message ||
+          error?.message ||
+          "Folder analysis failed.",
+        detail: String(error),
       },
-      {
-        status: 500,
-      }
+      { status: error?.response?.status || 500 }
     );
   }
 }
