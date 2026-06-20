@@ -12,11 +12,11 @@ const url = oauth2Client.generateAuthUrl({
   access_type: "offline",
   prompt: "consent",
   include_granted_scopes: true,
-  scope: [
-    "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/documents.readonly",
-    "https://www.googleapis.com/auth/presentations.readonly",
-  ],
+scope: [
+  "https://www.googleapis.com/auth/drive",
+  "https://www.googleapis.com/auth/documents",
+  "https://www.googleapis.com/auth/presentations.readonly",
+],
 });
 
   return NextResponse.redirect(url);
