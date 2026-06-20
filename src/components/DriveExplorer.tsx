@@ -24,6 +24,7 @@ const FOLDER_MIME = "application/vnd.google-apps.folder";
 export default function DriveExplorer({ onSendToAI }: DriveExplorerProps) {
   const [driveItems, setDriveItems] = useState<DriveItem[]>([]);
   const [driveLoading, setDriveLoading] = useState(false);
+  const [folderLoadingId, setFolderLoadingId] = useState<string | null>(null);
   const [analyzingFileId, setAnalyzingFileId] = useState<string | null>(null);
 
   const [drivePath, setDrivePath] = useState<DrivePathItem[]>([
@@ -126,6 +127,69 @@ ${data.text}`;
     }
   }
 
+  async function analyzeFolder(item: DriveItem) {
+    setFolderLoadingId(item.id);
+
+    try {
+      const res = await fetch("/api/google/analyze-folder", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          folderId: item.id,
+          folderName: item.name,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
+      const fileList = (data.files || [])
+        .map(
+          (file: any, index: number) =>
+            `${index + 1}. ${file.name}\nMIME Type: ${file.mimeType}\nModified: ${
+              file.modifiedTime || "unknown"
+            }`
+        )
+        .join("\n\n");
+
+      const prompt = `다음 Google Drive 폴더를 연구 프로젝트 관점에서 분석해줘.
+
+폴더명: ${item.name}
+폴더 ID: ${item.id}
+지원 파일 수: ${data.fileCount}
+
+파일 목록:
+${fileList}
+
+분석 요청:
+1. 이 폴더의 연구 주제와 목적 추정
+2. 포함된 자료의 유형별 분류
+3. 핵심 기술 키워드 도출
+4. 논문화 가능성
+5. 특허/사업화 가능성
+6. 부족한 자료 또는 추가 수집이 필요한 자료
+7. 후속 연구 및 보고서 작성 방향
+
+주의:
+현재 단계에서는 파일명과 메타데이터 기반의 1차 분석이다.
+파일 본문 통합 분석은 다음 단계에서 수행한다.`;
+
+      onSendToAI(prompt);
+      alert("폴더 분석 정보가 AI Command에 입력되었습니다. Run AI를 클릭하십시오.");
+    } catch (error) {
+      console.error(error);
+      alert("Folder analysis failed.");
+    } finally {
+      setFolderLoadingId(null);
+    }
+  }
+
   return (
     <section className="mt-8 border border-green-500 rounded-xl p-5">
       <div className="flex items-center gap-3">
@@ -161,16 +225,16 @@ ${data.text}`;
           <div className="space-y-4 mt-5">
             {driveItems.map((item) => {
               const isFolder = item.mimeType === FOLDER_MIME;
-const canAnalyze =
-  item.mimeType === "application/vnd.google-apps.document" ||
-  item.mimeType === "application/vnd.google-apps.presentation" ||
-  item.mimeType === "text/plain" ||
-  item.mimeType === "text/markdown" ||
-  item.mimeType === "application/pdf" ||
-  item.mimeType ===
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-  item.mimeType ===
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+              const canAnalyze =
+                item.mimeType === "application/vnd.google-apps.document" ||
+                item.mimeType === "application/vnd.google-apps.presentation" ||
+                item.mimeType === "text/plain" ||
+                item.mimeType === "text/markdown" ||
+                item.mimeType ===
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+                item.mimeType ===
+                  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
               return (
                 <div
@@ -199,12 +263,24 @@ const canAnalyze =
 
                   <div className="flex flex-wrap gap-3 mt-3">
                     {isFolder && (
-                      <button
-                        onClick={() => loadDriveChildren(item.id, item.name)}
-                        className="px-4 py-2 bg-green-700 text-white rounded font-semibold"
-                      >
-                        Open Folder
-                      </button>
+                      <>
+                        <button
+                          onClick={() => loadDriveChildren(item.id, item.name)}
+                          className="px-4 py-2 bg-green-700 text-white rounded font-semibold"
+                        >
+                          Open Folder
+                        </button>
+
+                        <button
+                          onClick={() => analyzeFolder(item)}
+                          disabled={folderLoadingId === item.id}
+                          className="px-4 py-2 bg-yellow-400 text-black rounded font-semibold disabled:opacity-50"
+                        >
+                          {folderLoadingId === item.id
+                            ? "Preparing..."
+                            : "Analyze Folder"}
+                        </button>
+                      </>
                     )}
 
                     {!isFolder && canAnalyze && (
