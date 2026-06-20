@@ -41,10 +41,32 @@ const templates = [
   },
 ];
 
-function makeDocTitle() {
+function sanitizeTitle(text: string) {
+  return text
+    .replace(/[\\/:*?"<>|#%{}[\]~&]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+function makeDocTitle(message: string, pubmedQuery: string) {
   const now = new Date();
   const stamp = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  return `ZENOME_AI_Analysis_${stamp}`;
+
+  let base = "ZENOME_AI_Analysis";
+
+  const fileMatch = message.match(/파일명:\s*(.+)/);
+  const folderMatch = message.match(/폴더명:\s*(.+)/);
+
+  if (fileMatch?.[1]) {
+    base = `${sanitizeTitle(fileMatch[1])}_File_Analysis`;
+  } else if (folderMatch?.[1]) {
+    base = `${sanitizeTitle(folderMatch[1])}_Folder_Analysis`;
+  } else if (message.includes("PubMed") && pubmedQuery.trim()) {
+    base = `PubMed_${sanitizeTitle(pubmedQuery)}_Analysis`;
+  }
+
+  return `${base}_${stamp}`;
 }
 
 export default function Home() {
@@ -121,7 +143,7 @@ export default function Home() {
     setSavedDocUrl("");
 
     try {
-      const title = makeDocTitle();
+      const title = makeDocTitle(message, pubmedQuery);
 
       const content = `# ${title}
 

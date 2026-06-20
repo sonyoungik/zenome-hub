@@ -2,6 +2,13 @@ import { google } from "googleapis";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import {
+  buildKnowledgeBase,
+  createKnowledgeProjectIdFromFolder,
+  formatKnowledgeServiceBuildReport,
+  normalizeKnowledgeSourceType,
+} from "@/lib/knowledge";
+
 export const runtime = "nodejs";
 
 const MAX_FILES = 10;
@@ -18,6 +25,24 @@ const SUPPORTED_MIME_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ];
+
+interface DriveFileItem {
+  id?: string | null;
+  name?: string | null;
+  mimeType?: string | null;
+  modifiedTime?: string | null;
+  webViewLink?: string | null;
+}
+
+interface AnalyzedFileText {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime?: string;
+  webViewLink?: string;
+  text: string;
+  error?: string;
+}
 
 function stripXmlTags(xml: string) {
   return xml
@@ -49,9 +74,13 @@ async function extractPptxText(buffer: Buffer) {
   return slides.join("\n\n--- Slide Break ---\n\n");
 }
 
-async function readFileText(drive: any, file: any) {
+async function readFileText(drive: any, file: DriveFileItem) {
   const fileId = file.id;
   const mimeType = file.mimeType || "";
+
+  if (!fileId) {
+    return "";
+  }
 
   if (mimeType === "application/vnd.google-apps.document") {
     const res = await drive.files.export(
@@ -119,6 +148,41 @@ async function readFileText(drive: any, file: any) {
   return "";
 }
 
+function createKnowledgeDocuments(params: {
+  folderId: string;
+  folderName: string;
+  fileTexts: AnalyzedFileText[];
+}) {
+  return params.fileTexts
+    .filter((file) => file.text && file.text.trim().length > 0)
+    .map((file) => {
+      const sourceType = normalizeKnowledgeSourceType(file.mimeType, file.name);
+
+      return {
+        title: file.name || "Untitled Drive File",
+        rawText: file.text,
+        sourceType,
+        sourceRef: {
+          sourceId: file.id,
+          sourceType,
+          fileId: file.id,
+          fileName: file.name,
+          mimeType: file.mimeType,
+          webViewLink: file.webViewLink,
+          folderId: params.folderId,
+          folderName: params.folderName,
+          drivePath: params.folderName ? [params.folderName, file.name] : [file.name],
+        },
+        tags: [
+          "google-drive",
+          "folder-analysis",
+          sourceType,
+          params.folderName || "unnamed-folder",
+        ],
+      };
+    });
+}
+
 export async function POST(req: Request) {
   try {
     const { folderId, folderName } = await req.json();
@@ -129,6 +193,8 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    const resolvedFolderName = folderName || "";
 
     const cookieStore = await cookies();
     const accessToken = cookieStore.get("google_access_token")?.value;
@@ -163,7 +229,7 @@ export async function POST(req: Request) {
       includeItemsFromAllDrives: true,
     });
 
-    const items = result.data.files || [];
+    const items = (result.data.files || []) as DriveFileItem[];
 
     const folders = items.filter((item) => item.mimeType === FOLDER_MIME);
 
@@ -178,14 +244,7 @@ export async function POST(req: Request) {
 
     const filesToRead = supportedFiles.slice(0, MAX_FILES);
 
-    const fileTexts: {
-      id: string;
-      name: string;
-      mimeType: string;
-      modifiedTime?: string;
-      text: string;
-      error?: string;
-    }[] = [];
+    const fileTexts: AnalyzedFileText[] = [];
 
     let totalChars = 0;
 
@@ -204,6 +263,7 @@ export async function POST(req: Request) {
           name: file.name || "",
           mimeType: file.mimeType || "",
           modifiedTime: file.modifiedTime || "",
+          webViewLink: file.webViewLink || "",
           text: clippedText,
         });
       } catch (error: any) {
@@ -212,6 +272,7 @@ export async function POST(req: Request) {
           name: file.name || "",
           mimeType: file.mimeType || "",
           modifiedTime: file.modifiedTime || "",
+          webViewLink: file.webViewLink || "",
           text: "",
           error:
             error?.response?.data?.error?.message ||
@@ -221,14 +282,37 @@ export async function POST(req: Request) {
       }
     }
 
+    const knowledgeDocuments = createKnowledgeDocuments({
+      folderId,
+      folderName: resolvedFolderName,
+      fileTexts,
+    });
+
+    const knowledgeProjectId = createKnowledgeProjectIdFromFolder(folderId);
+
+    const knowledgeBase =
+      knowledgeDocuments.length > 0
+        ? buildKnowledgeBase({
+            projectId: knowledgeProjectId,
+            projectType: "research_project",
+            documents: knowledgeDocuments,
+            buildGraph: true,
+            chunkingOptions: {
+              maxTokensPerChunk: 900,
+              overlapTokens: 120,
+              preserveHeadings: true,
+            },
+          })
+        : undefined;
+
     return NextResponse.json({
       folderId,
-      folderName: folderName || "",
+      folderName: resolvedFolderName,
       totalItemCount: items.length,
       folderCount: folders.length,
       supportedFileCount: supportedFiles.length,
       unsupportedFileCount: unsupportedFiles.length,
-      analyzedFileCount: fileTexts.filter((f) => f.text).length,
+      analyzedFileCount: fileTexts.filter((file) => file.text).length,
       maxFiles: MAX_FILES,
       maxCharsPerFile: MAX_CHARS_PER_FILE,
       maxTotalChars: MAX_TOTAL_CHARS,
@@ -236,6 +320,44 @@ export async function POST(req: Request) {
       files: supportedFiles,
       unsupportedFiles,
       fileTexts,
+      knowledgeBase: knowledgeBase
+        ? {
+            projectId: knowledgeBase.projectId,
+            itemCount: knowledgeBase.buildStats.itemCount,
+            chunkCount: knowledgeBase.buildStats.chunkCount,
+            totalRawCharacters: knowledgeBase.buildStats.totalRawCharacters,
+            totalTokenEstimate: knowledgeBase.buildStats.totalTokenEstimate,
+            graphStats: knowledgeBase.graphStats,
+            warnings: knowledgeBase.warnings,
+            errors: knowledgeBase.errors,
+            buildReport: formatKnowledgeServiceBuildReport(knowledgeBase),
+            items: knowledgeBase.items.map((item) => ({
+              itemId: item.itemId,
+              title: item.title,
+              sourceType: item.sourceType,
+              status: item.status,
+              chunkCount: item.chunks?.length ?? 0,
+              tags: item.tags ?? [],
+              sourceRef: item.sourceRef,
+            })),
+            graph: knowledgeBase.graph
+              ? {
+                  graphId: knowledgeBase.graph.graphId,
+                  projectId: knowledgeBase.graph.projectId,
+                  nodeCount: knowledgeBase.graph.nodes.length,
+                  edgeCount: knowledgeBase.graph.edges.length,
+                  nodes: knowledgeBase.graph.nodes,
+                  edges: knowledgeBase.graph.edges,
+                }
+              : undefined,
+          }
+        : {
+            projectId: knowledgeProjectId,
+            itemCount: 0,
+            chunkCount: 0,
+            warnings: ["No readable file text was available for Knowledge Base creation."],
+            errors: [],
+          },
       note: "PDF is currently excluded from content extraction. DOCX, PPTX, Google Docs, Google Slides, TXT, and Markdown are supported.",
     });
   } catch (error: any) {

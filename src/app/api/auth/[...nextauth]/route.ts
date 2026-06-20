@@ -12,54 +12,49 @@ const handler = NextAuth({
       },
 
       async authorize(credentials) {
-        const adminEmail = process.env.ADMIN_EMAIL;
-        const passwordHash = process.env.ADMIN_PASSWORD_HASH;
-
-        console.log("입력 email:", credentials?.email);
-        console.log("입력 password:", credentials?.password);
-        console.log("env email:", adminEmail);
-        console.log("env hash exists:", Boolean(passwordHash));
+        const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+        const passwordHash = process.env.ADMIN_PASSWORD_HASH?.trim();
 
         if (!credentials?.email || !credentials?.password) {
-          console.log("실패: email 또는 password 없음");
+          console.log("AUTH FAIL: missing email or password");
           return null;
         }
 
         if (!adminEmail || !passwordHash) {
-          console.log("실패: .env.local 환경변수 누락");
+          console.log("AUTH FAIL: missing ADMIN_EMAIL or ADMIN_PASSWORD_HASH");
           return null;
         }
 
         const inputEmail = credentials.email.trim().toLowerCase();
-        const envEmail = adminEmail.trim().toLowerCase();
+        const inputPassword = credentials.password.trim();
 
-        console.log("정규화 입력 email:", inputEmail);
-        console.log("정규화 env email:", envEmail);
+        console.log("AUTH CHECK:", {
+          inputEmail,
+          envEmail: adminEmail,
+          hashExists: Boolean(passwordHash),
+          hashLength: passwordHash.length,
+          hashPrefix: passwordHash.slice(0, 4),
+        });
 
-        if (inputEmail !== envEmail) {
-          console.log("실패: email 불일치");
+        if (inputEmail !== adminEmail) {
+          console.log("AUTH FAIL: email mismatch");
           return null;
         }
 
-        console.log("bcrypt 비교 시작");
+        const isValid = await bcrypt.compare(inputPassword, passwordHash);
 
-        const isValid = await bcrypt.compare(
-          credentials.password,
-          passwordHash.trim()
-        );
-
-        console.log("비밀번호 일치 여부:", isValid);
+        console.log("AUTH PASSWORD MATCH:", isValid);
 
         if (!isValid) {
-          console.log("실패: 비밀번호 불일치");
+          console.log("AUTH FAIL: password mismatch");
           return null;
         }
 
-        console.log("로그인 성공");
+        console.log("AUTH SUCCESS:", inputEmail);
 
         return {
           id: "prof-son",
-          email: envEmail,
+          email: adminEmail,
           name: "Prof. Son",
         };
       },

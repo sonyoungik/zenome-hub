@@ -15,6 +15,94 @@ type DrivePathItem = {
   name: string;
 };
 
+type KnowledgeBaseSummary = {
+  projectId: string;
+  itemCount: number;
+  chunkCount: number;
+  totalRawCharacters?: number;
+  totalTokenEstimate?: number;
+  graphStats?: {
+    projectId: string;
+    nodeCount: number;
+    edgeCount: number;
+    itemCount: number;
+    orphanNodeCount: number;
+  };
+  warnings?: string[];
+  errors?: string[];
+  buildReport?: string;
+  items?: Array<{
+    itemId: string;
+    title: string;
+    sourceType: string;
+    status: string;
+    chunkCount: number;
+    tags?: string[];
+    sourceRef?: {
+      fileId?: string;
+      fileName?: string;
+      mimeType?: string;
+      webViewLink?: string;
+      folderId?: string;
+      folderName?: string;
+      drivePath?: string[];
+    };
+  }>;
+  graph?: {
+    graphId: string;
+    projectId: string;
+    nodeCount: number;
+    edgeCount: number;
+    nodes?: Array<{
+      entityId: string;
+      name: string;
+      type: string;
+      description?: string;
+      confidence?: number;
+      sourceItemIds?: string[];
+      sourceChunkIds?: string[];
+    }>;
+    edges?: Array<{
+      relationId: string;
+      sourceEntityId: string;
+      targetEntityId: string;
+      type: string;
+      label?: string;
+      evidence?: string;
+      confidence?: number;
+      sourceItemIds?: string[];
+      sourceChunkIds?: string[];
+    }>;
+  };
+};
+
+type FolderAnalysisResult = {
+  folderId: string;
+  folderName: string;
+  totalItemCount: number;
+  folderCount: number;
+  supportedFileCount: number;
+  unsupportedFileCount: number;
+  analyzedFileCount: number;
+  maxFiles: number;
+  maxCharsPerFile: number;
+  maxTotalChars: number;
+  folders: DriveItem[];
+  files: DriveItem[];
+  unsupportedFiles: DriveItem[];
+  fileTexts: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    modifiedTime?: string;
+    webViewLink?: string;
+    text: string;
+    error?: string;
+  }>;
+  knowledgeBase?: KnowledgeBaseSummary;
+  note?: string;
+};
+
 type DriveExplorerProps = {
   onSendToAI: (prompt: string) => void;
 };
@@ -26,6 +114,8 @@ export default function DriveExplorer({ onSendToAI }: DriveExplorerProps) {
   const [driveLoading, setDriveLoading] = useState(false);
   const [folderLoadingId, setFolderLoadingId] = useState<string | null>(null);
   const [analyzingFileId, setAnalyzingFileId] = useState<string | null>(null);
+  const [folderAnalysisResult, setFolderAnalysisResult] =
+    useState<FolderAnalysisResult | null>(null);
 
   const [drivePath, setDrivePath] = useState<DrivePathItem[]>([
     { id: "root", name: "Root" },
@@ -110,7 +200,7 @@ MIME Type: ${data.mimeType}
 분석 요청:
 1. 핵심 내용 요약
 2. 주요 개념과 키워드
-3. 연구/강의/자문 업무에 활용할 수 있는 포인트
+3. 연구, 강의, 논문 업무에 활용할 수 있는 포인트
 4. 후속 작업 제안
 5. 필요하면 표로 정리
 
@@ -118,7 +208,7 @@ MIME Type: ${data.mimeType}
 ${data.text}`;
 
       onSendToAI(prompt);
-      alert("파일 내용이 AI Command에 입력되었습니다. Run AI를 클릭하십시오.");
+      alert("파일 내용이 AI Command에 입력되었습니다. Run AI를 클릭하세요.");
     } catch (error) {
       console.error(error);
       alert("File analysis preparation failed.");
@@ -142,12 +232,14 @@ ${data.text}`;
         }),
       });
 
-      const data = await res.json();
+      const data: FolderAnalysisResult & { error?: string } = await res.json();
 
       if (data.error) {
         alert(data.error);
         return;
       }
+
+      setFolderAnalysisResult(data);
 
       const folderList = (data.folders || [])
         .map(
@@ -176,7 +268,7 @@ Modified: ${file.modifiedTime || "unknown"}`
         .join("\n\n");
 
       const fileTextBlocks = (data.fileTexts || [])
-        .map((file: any, index: number) => {
+        .map((file, index: number) => {
           if (file.error) {
             return `### File ${index + 1}: ${file.name}
 MIME Type: ${file.mimeType}
@@ -191,6 +283,21 @@ ${file.text}`;
         })
         .join("\n\n==============================\n\n");
 
+      const knowledgeBaseBlock = data.knowledgeBase
+        ? `
+
+Knowledge Base 결과:
+- Project ID: ${data.knowledgeBase.projectId}
+- Item Count: ${data.knowledgeBase.itemCount}
+- Chunk Count: ${data.knowledgeBase.chunkCount}
+- Total Raw Characters: ${data.knowledgeBase.totalRawCharacters ?? 0}
+- Total Token Estimate: ${data.knowledgeBase.totalTokenEstimate ?? 0}
+- Graph Nodes: ${data.knowledgeBase.graphStats?.nodeCount ?? 0}
+- Graph Edges: ${data.knowledgeBase.graphStats?.edgeCount ?? 0}
+- Warnings: ${(data.knowledgeBase.warnings || []).join(" | ") || "없음"}
+- Errors: ${(data.knowledgeBase.errors || []).join(" | ") || "없음"}`
+        : "";
+
       const prompt = `다음 Google Drive 폴더를 연구 프로젝트 단위로 통합 분석해줘.
 
 폴더명: ${item.name}
@@ -204,6 +311,7 @@ ${file.text}`;
 - 실제 본문 추출 파일 수: ${data.analyzedFileCount}
 - 파일별 최대 추출 문자 수: ${data.maxCharsPerFile}
 - 전체 최대 추출 문자 수: ${data.maxTotalChars}
+${knowledgeBaseBlock}
 
 하위 폴더 목록:
 ${folderList || "없음"}
@@ -216,12 +324,12 @@ ${unsupportedFileList || "없음"}
 
 아래는 폴더 내 지원 파일에서 추출한 본문이다.
 
-${fileTextBlocks || "본문을 추출한 파일이 없음"}
+${fileTextBlocks || "본문이 추출된 파일이 없음"}
 
 분석 요청:
 1. 이 폴더의 전체 연구 주제와 목적을 추정해줘.
 2. 포함된 자료를 논문, 특허, 발표자료, 보고서, 실험자료, 사업자료 관점에서 분류해줘.
-3. 핵심 기술 키워드와 반복 등장 개념을 도출해줘.
+3. 핵심 기술 키워드와 반복 등장 개념을 추출해줘.
 4. 논문화 가능성이 높은 주제를 3개 이상 제안해줘.
 5. 특허 또는 사업화 가능성이 있는 주제를 3개 이상 제안해줘.
 6. 현재 자료에서 부족한 점과 추가 수집이 필요한 자료를 제안해줘.
@@ -231,10 +339,12 @@ ${fileTextBlocks || "본문을 추출한 파일이 없음"}
 
 주의:
 PDF는 현재 본문 추출 대상에서 제외되어 있다.
-분석은 현재 추출 가능한 문서 본문과 파일 메타데이터를 근거로 수행하라.`;
+분석은 현재 추출 가능한 문서 본문과 파일 메타데이터를 근거로 수행해라.`;
 
       onSendToAI(prompt);
-      alert("폴더 본문 통합 분석 프롬프트가 AI Command에 입력되었습니다. Run AI를 클릭하십시오.");
+      alert(
+        "폴더 본문 통합 분석 프롬프트와 Knowledge Base 결과가 준비되었습니다."
+      );
     } catch (error) {
       console.error(error);
       alert("Folder content analysis failed.");
@@ -369,6 +479,145 @@ PDF는 현재 본문 추출 대상에서 제외되어 있다.
             })}
           </div>
         </>
+      )}
+
+      {folderAnalysisResult?.knowledgeBase && (
+        <div className="mt-8 border border-yellow-400 rounded-xl p-5 bg-neutral-950">
+          <h3 className="text-2xl font-semibold text-yellow-300">
+            Knowledge Base Summary
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 text-sm text-yellow-100">
+            <div>Project ID: {folderAnalysisResult.knowledgeBase.projectId}</div>
+            <div>Items: {folderAnalysisResult.knowledgeBase.itemCount}</div>
+            <div>Chunks: {folderAnalysisResult.knowledgeBase.chunkCount}</div>
+            <div>
+              Raw Characters:{" "}
+              {folderAnalysisResult.knowledgeBase.totalRawCharacters ?? 0}
+            </div>
+            <div>
+              Token Estimate:{" "}
+              {folderAnalysisResult.knowledgeBase.totalTokenEstimate ?? 0}
+            </div>
+            <div>
+              Graph Nodes:{" "}
+              {folderAnalysisResult.knowledgeBase.graphStats?.nodeCount ?? 0}
+            </div>
+            <div>
+              Graph Edges:{" "}
+              {folderAnalysisResult.knowledgeBase.graphStats?.edgeCount ?? 0}
+            </div>
+            <div>
+              Orphan Nodes:{" "}
+              {folderAnalysisResult.knowledgeBase.graphStats?.orphanNodeCount ??
+                0}
+            </div>
+          </div>
+
+          {(folderAnalysisResult.knowledgeBase.warnings?.length || 0) > 0 && (
+            <div className="mt-4">
+              <h4 className="font-semibold text-yellow-300">Warnings</h4>
+              <ul className="list-disc pl-6 text-sm text-yellow-100">
+                {folderAnalysisResult.knowledgeBase.warnings?.map(
+                  (warning, index) => (
+                    <li key={index}>{warning}</li>
+                  )
+                )}
+              </ul>
+            </div>
+          )}
+
+          {(folderAnalysisResult.knowledgeBase.errors?.length || 0) > 0 && (
+            <div className="mt-4">
+              <h4 className="font-semibold text-red-300">Errors</h4>
+              <ul className="list-disc pl-6 text-sm text-red-100">
+                {folderAnalysisResult.knowledgeBase.errors?.map(
+                  (error, index) => (
+                    <li key={index}>{error}</li>
+                  )
+                )}
+              </ul>
+            </div>
+          )}
+
+          <div className="mt-6">
+            <h4 className="font-semibold text-yellow-300">Knowledge Items</h4>
+            <div className="space-y-3 mt-3">
+              {(folderAnalysisResult.knowledgeBase.items || []).map((item) => (
+                <div
+                  key={item.itemId}
+                  className="border border-yellow-700 rounded-lg p-3"
+                >
+                  <p className="font-semibold text-yellow-200">{item.title}</p>
+                  <p className="text-sm text-yellow-100">
+                    Source Type: {item.sourceType} | Status: {item.status} |
+                    Chunks: {item.chunkCount}
+                  </p>
+                  {item.tags && item.tags.length > 0 && (
+                    <p className="text-xs text-yellow-200 mt-1">
+                      Tags: {item.tags.join(", ")}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <h4 className="font-semibold text-yellow-300">
+              Knowledge Graph Preview
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+              <div className="border border-yellow-700 rounded-lg p-3">
+                <p className="font-semibold text-yellow-200">Nodes</p>
+                <div className="mt-2 space-y-2 max-h-64 overflow-auto">
+                  {(folderAnalysisResult.knowledgeBase.graph?.nodes || [])
+                    .slice(0, 20)
+                    .map((node) => (
+                      <div key={node.entityId} className="text-sm text-yellow-100">
+                        <span className="font-semibold">{node.name}</span>
+                        <span className="text-yellow-300"> ({node.type})</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <div className="border border-yellow-700 rounded-lg p-3">
+                <p className="font-semibold text-yellow-200">Edges</p>
+                <div className="mt-2 space-y-2 max-h-64 overflow-auto">
+                  {(folderAnalysisResult.knowledgeBase.graph?.edges || [])
+                    .slice(0, 20)
+                    .map((edge) => (
+                      <div
+                        key={edge.relationId}
+                        className="text-sm text-yellow-100"
+                      >
+                        <span className="font-semibold">{edge.type}</span>
+                        {edge.label && (
+                          <span className="text-yellow-300">
+                            {" "}
+                            - {edge.label}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {folderAnalysisResult.knowledgeBase.buildReport && (
+            <details className="mt-6">
+              <summary className="cursor-pointer font-semibold text-yellow-300">
+                Build Report
+              </summary>
+              <pre className="mt-3 whitespace-pre-wrap text-xs text-yellow-100 border border-yellow-800 rounded p-3 overflow-auto">
+                {folderAnalysisResult.knowledgeBase.buildReport}
+              </pre>
+            </details>
+          )}
+        </div>
       )}
     </section>
   );
