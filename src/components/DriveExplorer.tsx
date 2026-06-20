@@ -152,31 +152,46 @@ ${data.text}`;
       const folderList = (data.folders || [])
         .map(
           (folder: DriveItem, index: number) =>
-            `${index + 1}. [Folder] ${folder.name}\nModified: ${
-              folder.modifiedTime || "unknown"
-            }`
+            `${index + 1}. [Folder] ${folder.name}
+Modified: ${folder.modifiedTime || "unknown"}`
         )
         .join("\n\n");
 
-      const fileList = (data.files || [])
+      const supportedFileList = (data.files || [])
         .map(
           (file: DriveItem, index: number) =>
-            `${index + 1}. [Supported File] ${file.name}\nMIME Type: ${
-              file.mimeType || "unknown"
-            }\nModified: ${file.modifiedTime || "unknown"}`
+            `${index + 1}. [Supported File] ${file.name}
+MIME Type: ${file.mimeType || "unknown"}
+Modified: ${file.modifiedTime || "unknown"}`
         )
         .join("\n\n");
 
-      const unsupportedList = (data.unsupportedFiles || [])
+      const unsupportedFileList = (data.unsupportedFiles || [])
         .map(
           (file: DriveItem, index: number) =>
-            `${index + 1}. [Unsupported File] ${file.name}\nMIME Type: ${
-              file.mimeType || "unknown"
-            }\nModified: ${file.modifiedTime || "unknown"}`
+            `${index + 1}. [Unsupported File] ${file.name}
+MIME Type: ${file.mimeType || "unknown"}
+Modified: ${file.modifiedTime || "unknown"}`
         )
         .join("\n\n");
 
-      const prompt = `다음 Google Drive 폴더를 연구 프로젝트 관점에서 분석해줘.
+      const fileTextBlocks = (data.fileTexts || [])
+        .map((file: any, index: number) => {
+          if (file.error) {
+            return `### File ${index + 1}: ${file.name}
+MIME Type: ${file.mimeType}
+Read Error: ${file.error}`;
+          }
+
+          return `### File ${index + 1}: ${file.name}
+MIME Type: ${file.mimeType}
+Modified: ${file.modifiedTime || "unknown"}
+
+${file.text}`;
+        })
+        .join("\n\n==============================\n\n");
+
+      const prompt = `다음 Google Drive 폴더를 연구 프로젝트 단위로 통합 분석해줘.
 
 폴더명: ${item.name}
 폴더 ID: ${item.id}
@@ -186,34 +201,43 @@ ${data.text}`;
 - 하위 폴더 수: ${data.folderCount}
 - 분석 지원 파일 수: ${data.supportedFileCount}
 - 현재 미지원 파일 수: ${data.unsupportedFileCount}
+- 실제 본문 추출 파일 수: ${data.analyzedFileCount}
+- 파일별 최대 추출 문자 수: ${data.maxCharsPerFile}
+- 전체 최대 추출 문자 수: ${data.maxTotalChars}
 
 하위 폴더 목록:
 ${folderList || "없음"}
 
 분석 지원 파일 목록:
-${fileList || "없음"}
+${supportedFileList || "없음"}
 
 현재 미지원 파일 목록:
-${unsupportedList || "없음"}
+${unsupportedFileList || "없음"}
+
+아래는 폴더 내 지원 파일에서 추출한 본문이다.
+
+${fileTextBlocks || "본문을 추출한 파일이 없음"}
 
 분석 요청:
-1. 이 폴더의 연구 주제와 목적을 추정해줘.
-2. 포함된 자료를 연구논문, 특허, 발표자료, 보고서, 실험자료, 사업자료 관점에서 분류해줘.
-3. 핵심 기술 키워드를 도출해줘.
-4. 논문화 가능성이 높은 주제를 제안해줘.
-5. 특허 또는 사업화 가능성이 있는 주제를 제안해줘.
-6. 부족한 자료 또는 추가 수집이 필요한 자료를 제안해줘.
-7. 후속 연구 및 보고서 작성 방향을 제안해줘.
+1. 이 폴더의 전체 연구 주제와 목적을 추정해줘.
+2. 포함된 자료를 논문, 특허, 발표자료, 보고서, 실험자료, 사업자료 관점에서 분류해줘.
+3. 핵심 기술 키워드와 반복 등장 개념을 도출해줘.
+4. 논문화 가능성이 높은 주제를 3개 이상 제안해줘.
+5. 특허 또는 사업화 가능성이 있는 주제를 3개 이상 제안해줘.
+6. 현재 자료에서 부족한 점과 추가 수집이 필요한 자료를 제안해줘.
+7. 후속 연구계획, 실험계획, 보고서 작성 방향을 제안해줘.
+8. 박사과정 대학원생이 공부할 수 있도록 학습 로드맵 형태로 정리해줘.
+9. 마지막에 실행 가능한 Action Item을 표로 정리해줘.
 
 주의:
-현재 단계에서는 파일명과 메타데이터 기반의 1차 분석이다.
-파일 본문 통합 분석은 다음 단계에서 수행한다.`;
+PDF는 현재 본문 추출 대상에서 제외되어 있다.
+분석은 현재 추출 가능한 문서 본문과 파일 메타데이터를 근거로 수행하라.`;
 
       onSendToAI(prompt);
-      alert("폴더 분석 정보가 AI Command에 입력되었습니다. Run AI를 클릭하십시오.");
+      alert("폴더 본문 통합 분석 프롬프트가 AI Command에 입력되었습니다. Run AI를 클릭하십시오.");
     } catch (error) {
       console.error(error);
-      alert("Folder analysis failed.");
+      alert("Folder content analysis failed.");
     } finally {
       setFolderLoadingId(null);
     }
@@ -306,7 +330,7 @@ ${unsupportedList || "없음"}
                           className="px-4 py-2 bg-yellow-400 text-black rounded font-semibold disabled:opacity-50"
                         >
                           {folderLoadingId === item.id
-                            ? "Preparing..."
+                            ? "Reading Folder..."
                             : "Analyze Folder"}
                         </button>
                       </>

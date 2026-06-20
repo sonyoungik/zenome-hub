@@ -4,6 +4,12 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+const MAX_FILES = 10;
+const MAX_CHARS_PER_FILE = 8000;
+const MAX_TOTAL_CHARS = 50000;
+
+const FOLDER_MIME = "application/vnd.google-apps.folder";
+
 const SUPPORTED_MIME_TYPES = [
   "application/vnd.google-apps.document",
   "application/vnd.google-apps.presentation",
@@ -12,6 +18,106 @@ const SUPPORTED_MIME_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ];
+
+function stripXmlTags(xml: string) {
+  return xml
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function extractPptxText(buffer: Buffer) {
+  const JSZipModule = await import("jszip");
+  const JSZip = JSZipModule.default;
+
+  const zip = await JSZip.loadAsync(buffer);
+  const slideFiles = Object.keys(zip.files)
+    .filter((name) => name.startsWith("ppt/slides/slide") && name.endsWith(".xml"))
+    .sort();
+
+  const slides: string[] = [];
+
+  for (const fileName of slideFiles) {
+    const xml = await zip.files[fileName].async("string");
+    const text = stripXmlTags(xml);
+    if (text) slides.push(text);
+  }
+
+  return slides.join("\n\n--- Slide Break ---\n\n");
+}
+
+async function readFileText(drive: any, file: any) {
+  const fileId = file.id;
+  const mimeType = file.mimeType || "";
+
+  if (mimeType === "application/vnd.google-apps.document") {
+    const res = await drive.files.export(
+      { fileId, mimeType: "text/plain" },
+      { responseType: "text" }
+    );
+
+    return String(res.data || "");
+  }
+
+  if (mimeType === "application/vnd.google-apps.presentation") {
+    const res = await drive.files.export(
+      {
+        fileId,
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      },
+      { responseType: "arraybuffer" }
+    );
+
+    const buffer = Buffer.from(res.data as ArrayBuffer);
+    return await extractPptxText(buffer);
+  }
+
+  if (mimeType === "text/plain" || mimeType === "text/markdown") {
+    const res = await drive.files.get(
+      {
+        fileId,
+        alt: "media",
+        supportsAllDrives: true,
+      },
+      { responseType: "text" }
+    );
+
+    return String(res.data || "");
+  }
+
+  const res = await drive.files.get(
+    {
+      fileId,
+      alt: "media",
+      supportsAllDrives: true,
+    },
+    { responseType: "arraybuffer" }
+  );
+
+  const buffer = Buffer.from(res.data as ArrayBuffer);
+
+  if (
+    mimeType ===
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    const mammoth = await import("mammoth");
+    const parsed = await mammoth.extractRawText({ buffer });
+    return parsed.value || "";
+  }
+
+  if (
+    mimeType ===
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) {
+    return await extractPptxText(buffer);
+  }
+
+  return "";
+}
 
 export async function POST(req: Request) {
   try {
@@ -59,9 +165,7 @@ export async function POST(req: Request) {
 
     const items = result.data.files || [];
 
-    const folders = items.filter(
-      (item) => item.mimeType === "application/vnd.google-apps.folder"
-    );
+    const folders = items.filter((item) => item.mimeType === FOLDER_MIME);
 
     const supportedFiles = items.filter((item) =>
       SUPPORTED_MIME_TYPES.includes(item.mimeType || "")
@@ -69,11 +173,53 @@ export async function POST(req: Request) {
 
     const unsupportedFiles = items.filter((item) => {
       const mimeType = item.mimeType || "";
-      return (
-        mimeType !== "application/vnd.google-apps.folder" &&
-        !SUPPORTED_MIME_TYPES.includes(mimeType)
-      );
+      return mimeType !== FOLDER_MIME && !SUPPORTED_MIME_TYPES.includes(mimeType);
     });
+
+    const filesToRead = supportedFiles.slice(0, MAX_FILES);
+
+    const fileTexts: {
+      id: string;
+      name: string;
+      mimeType: string;
+      modifiedTime?: string;
+      text: string;
+      error?: string;
+    }[] = [];
+
+    let totalChars = 0;
+
+    for (const file of filesToRead) {
+      try {
+        if (totalChars >= MAX_TOTAL_CHARS) break;
+
+        const rawText = await readFileText(drive, file);
+        const remaining = MAX_TOTAL_CHARS - totalChars;
+        const clippedText = rawText.slice(0, Math.min(MAX_CHARS_PER_FILE, remaining));
+
+        totalChars += clippedText.length;
+
+        fileTexts.push({
+          id: file.id || "",
+          name: file.name || "",
+          mimeType: file.mimeType || "",
+          modifiedTime: file.modifiedTime || "",
+          text: clippedText,
+        });
+      } catch (error: any) {
+        fileTexts.push({
+          id: file.id || "",
+          name: file.name || "",
+          mimeType: file.mimeType || "",
+          modifiedTime: file.modifiedTime || "",
+          text: "",
+          error:
+            error?.response?.data?.error?.message ||
+            error?.message ||
+            "Failed to read file.",
+        });
+      }
+    }
 
     return NextResponse.json({
       folderId,
@@ -82,10 +228,15 @@ export async function POST(req: Request) {
       folderCount: folders.length,
       supportedFileCount: supportedFiles.length,
       unsupportedFileCount: unsupportedFiles.length,
+      analyzedFileCount: fileTexts.filter((f) => f.text).length,
+      maxFiles: MAX_FILES,
+      maxCharsPerFile: MAX_CHARS_PER_FILE,
+      maxTotalChars: MAX_TOTAL_CHARS,
       folders,
       files: supportedFiles,
       unsupportedFiles,
-      note: "This endpoint performs metadata-based folder analysis. Full content-based multi-file analysis will be added in the next step.",
+      fileTexts,
+      note: "PDF is currently excluded from content extraction. DOCX, PPTX, Google Docs, Google Slides, TXT, and Markdown are supported.",
     });
   } catch (error: any) {
     console.error("GOOGLE ANALYZE FOLDER ERROR:", error);
