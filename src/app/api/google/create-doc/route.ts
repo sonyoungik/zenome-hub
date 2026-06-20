@@ -8,7 +8,7 @@ const OUTPUT_FOLDER_NAME = "PROF_TATE_RO_Outputs";
 
 async function findOrCreateOutputFolder(drive: any) {
   const list = await drive.files.list({
-    q: `name='${OUTPUT_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+    q: `'root' in parents and name='${OUTPUT_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
     fields: "files(id, name)",
     pageSize: 10,
     supportsAllDrives: true,
@@ -17,14 +17,13 @@ async function findOrCreateOutputFolder(drive: any) {
 
   const existing = list.data.files?.[0];
 
-  if (existing?.id) {
-    return existing.id;
-  }
+  if (existing?.id) return existing.id;
 
   const created = await drive.files.create({
     requestBody: {
       name: OUTPUT_FOLDER_NAME,
       mimeType: "application/vnd.google-apps.folder",
+      parents: ["root"],
     },
     fields: "id",
     supportsAllDrives: true,
@@ -72,9 +71,7 @@ export async function POST(req: Request) {
     const folderId = await findOrCreateOutputFolder(drive);
 
     const doc = await docs.documents.create({
-      requestBody: {
-        title,
-      },
+      requestBody: { title },
     });
 
     const documentId = doc.data.documentId;
@@ -92,9 +89,7 @@ export async function POST(req: Request) {
         requests: [
           {
             insertText: {
-              location: {
-                index: 1,
-              },
+              location: { index: 1 },
               text: content,
             },
           },
@@ -102,9 +97,18 @@ export async function POST(req: Request) {
       },
     });
 
+    const fileMeta = await drive.files.get({
+      fileId: documentId,
+      fields: "parents",
+      supportsAllDrives: true,
+    });
+
+    const previousParents = fileMeta.data.parents?.join(",");
+
     await drive.files.update({
       fileId: documentId,
       addParents: folderId,
+      removeParents: previousParents,
       fields: "id, name, webViewLink",
       supportsAllDrives: true,
     });
